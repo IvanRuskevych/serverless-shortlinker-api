@@ -1,0 +1,75 @@
+service: serverless-shortlinker-api
+
+frameworkVersion: "3"
+
+plugins:
+  - serverless-plugin-typescript
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: dev
+  region: eu-central-1
+
+  #  environment:
+  #    DYNAMODB_TABLE: ${self:service}-${opt:stage, self:provider.stage}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          # Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+          Resource:
+            - { "Fn::GetAtt": ["TableUsers", "Arn"] }
+functions:
+  userSignUp:
+    handler: src/functions/auth.userSignUp
+    events:
+      - httpApi:
+          path: /auth/sign-up
+          method: post
+        #  cors: true
+
+  userSignIn:
+    handler: src/functions/auth.userSignIn
+    events:
+      - httpApi:
+          path: /auth/sign-in
+          method: post
+        #  cors: true
+
+  usersList:
+    handler: src/functions/auth.usersList
+    events:
+      - httpApi:
+          path: /auth/list
+          method: get
+        #  cors: true
+
+resources:
+  Resources:
+    TableUsers:
+      Type: "AWS::DynamoDB::Table"
+      # DeletionPolicy: Retain
+      Properties:
+        TableName: TableUsers
+
+        AttributeDefinitions:
+          - AttributeName: userID
+            AttributeType: S
+
+        KeySchema:
+          - AttributeName: userID
+            KeyType: HASH
+
+        ProvisionedThroughput:
+          ReadCapacityUnits: 2
+          WriteCapacityUnits: 2
+# TableName: ${self:provider.environment.DYNAMODB_TABLE}
