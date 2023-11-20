@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "moduleResolution": "node",
+    "target": "es2017",
+    "lib": ["es2017"],
+    "module": "commonjs",
+
+    "outDir": ".build",
+    "rootDir": "./",
+
+    "preserveConstEnums": true,
+    "strictNullChecks": true,
+    "sourceMap": true,
+    "allowJs": true,
+    "strict": true,
+    "esModuleInterop": true
+  },
+
+  "exclude": ["node_modules", "**/*.spec.ts"],
+
+  "types": ["node", "aws-sdk"]
+}
