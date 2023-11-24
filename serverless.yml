@@ -29,16 +29,16 @@ provider:
           Resource:
             - { "Fn::GetAtt": ["TableUsers", "Arn"] }
 functions:
-  userSignUp:
-    handler: src/functions/auth.userSignUp
+  signUp:
+    handler: src/functions/auth.signUp
     events:
       - httpApi:
           path: /auth/sign-up
           method: post
         #  cors: true
 
-  userSignIn:
-    handler: src/functions/auth.userSignIn
+  signIn:
+    handler: src/functions/auth.signIn
     events:
       - httpApi:
           path: /auth/sign-in
