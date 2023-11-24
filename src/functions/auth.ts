@@ -8,6 +8,8 @@ import { v4 } from "uuid";
 import { User } from "../schemas/interfaces";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { createError } from "../utils/errors";
+import { hashPassword } from "../services/password.services";
+import { generateTokens } from "../services/tokens.services";
 
 const dynamoDBClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(dynamoDBClient);
@@ -18,7 +20,7 @@ const headers = { "content-type": "application/json" };
 export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const reqBody = JSON.parse(event.body as string);
-    const { email } = reqBody;
+    const { email, password } = reqBody;
 
     const scanCommandEmail: ScanCommand = new ScanCommand({
       TableName: usersTableName,
@@ -31,11 +33,16 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     if (result.Items && result.Items.length > 0) {
       return createError(409, { message: "Email in use" });
     }
+    const userID = v4();
+    const hashedPSW = await hashPassword(password);
+    const { accessToken, refreshToken } = generateTokens({ userID, email });
 
     const newUser = {
       ...reqBody,
-      //   password: hashedPSW
-      userID: v4(),
+      password: hashedPSW,
+      userID,
+      accessToken,
+      refreshToken,
     };
 
     const command: PutCommand = new PutCommand({
