@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "serverless deploy",
+    "dep": "serverless deploy",
     "rem": "serverless remove"
   },
   "keywords": [],

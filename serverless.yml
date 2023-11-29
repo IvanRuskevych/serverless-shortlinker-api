@@ -28,6 +28,7 @@ provider:
           # Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
           Resource:
             - { "Fn::GetAtt": ["TableUsers", "Arn"] }
+            - { "Fn::GetAtt": ["TableLinks", "Arn"] }
 functions:
   signUp:
     handler: src/functions/auth.signUp
@@ -51,7 +52,20 @@ functions:
       - httpApi:
           path: /auth/list
           method: get
-        #  cors: true
+
+  createNewLink:
+    handler: src/functions/links.createNewLink
+    events:
+      - httpApi:
+          path: /links/create-new-link
+          method: post
+
+  linksList:
+    handler: src/functions/links.linksList
+    events:
+      - httpApi:
+          path: /links/list
+          method: get
 
 resources:
   Resources:
@@ -72,4 +86,21 @@ resources:
         ProvisionedThroughput:
           ReadCapacityUnits: 2
           WriteCapacityUnits: 2
+
+    TableLinks:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        TableName: TableLinks
+
+        AttributeDefinitions:
+          - AttributeName: linkID
+            AttributeType: S
+
+        KeySchema:
+          - AttributeName: linkID
+            KeyType: HASH
+
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
 # TableName: ${self:provider.environment.DYNAMODB_TABLE}
