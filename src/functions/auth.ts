@@ -17,6 +17,7 @@ const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 const usersTableName = "TableUsers";
+// const { USERS_TABLE } = process.env;
 const headers = { "content-type": "application/json" };
 
 export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -26,6 +27,7 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 
     const scanCommandEmail: ScanCommand = new ScanCommand({
       TableName: usersTableName,
+      // TableName: USERS_TABLE,
       FilterExpression: "email = :value",
       ExpressionAttributeValues: marshall({ ":value": email }),
     });
@@ -49,6 +51,7 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 
     const command: PutCommand = new PutCommand({
       TableName: usersTableName,
+      // TableName: USERS_TABLE,
       Item: newUser,
     });
 
@@ -78,6 +81,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     // find user by id
     const commandFindUserByEmail: ScanCommand = new ScanCommand({
       TableName: usersTableName,
+      // TableName: USERS_TABLE,
       FilterExpression: "email = :value",
       ExpressionAttributeValues: marshall({ ":value": email }),
     });
@@ -106,6 +110,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     // find user by id & update tokens
     const paramsUpdateToken: UpdateItemCommandInput = {
       TableName: usersTableName,
+      // TableName: USERS_TABLE,
       Key: marshall({ userID: userID }),
       UpdateExpression: "SET accessToken = :value1, refreshToken = :value2",
       ExpressionAttributeValues: marshall({ ":value1": accessToken, ":value2": refreshToken }),
@@ -131,6 +136,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 export const usersList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const command: ScanCommand = new ScanCommand({
     TableName: usersTableName,
+    // TableName: USERS_TABLE,
   });
 
   const { Items } = await ddbDocClient.send(command);

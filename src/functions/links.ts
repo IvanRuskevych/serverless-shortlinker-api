@@ -1,7 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { DynamoDBClient, ScanCommand } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { unmarshall } from "@aws-sdk/util-dynamodb";
+import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
 import { v4 } from "uuid";
 
@@ -12,24 +12,24 @@ const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 const headers = { "content-type": "application/json" };
 const linksTableName = "TableLinks";
-
+const BASE_URL = process.env.BASE_URL;
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     // check for authorized and get userID
 
     const reqBody = JSON.parse(event.body as string);
-    const { link, expireDays = 0 } = reqBody as { link: string; expireDays: number };
+    const { expireDays = 0 } = reqBody as { expireDays: number };
 
     // if (!link) {}
     // if (expireDays>0) {} // => add to scheduler
 
     const linkID: string = v4();
-    const { protocol, hostname, pathname } = new URL(link);
     const linkMarker: string = linkID.slice(0, 6);
-    const shortedLink: string = `${protocol}//${hostname}${pathname}?linkMarker=${linkMarker}`;
+
+    const shortedLink: string = `${BASE_URL}/links/${linkMarker}`;
+
     const createdDate = Date.now();
     const expireDate = Date.now() + expireDays * 24 * 60 * 60 * 1000;
-    // const defDate = (expireDate - createdDate) / (24 * 60 * 60 * 1000);
 
     const newLinkData = {
       ...reqBody,
@@ -68,6 +68,39 @@ export const linksList = async (event: APIGatewayProxyEvent): Promise<APIGateway
     const unmarshalledItems = Items!.map((item) => unmarshall(item));
 
     const body = JSON.stringify(unmarshalledItems);
+
+    return {
+      statusCode: 200,
+      headers,
+      body,
+    };
+  } catch (error) {
+    return createError(500, { message: error });
+  }
+};
+
+export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  try {
+    const linkMarker = event.pathParameters?.linkMarker as string;
+
+    if (!linkMarker) {
+      return createError(400, { message: "Invalid link ==>> linkMarker" });
+    }
+
+    const commandFindLink: ScanCommand = new ScanCommand({
+      TableName: linksTableName,
+      // TableName: LINKS_TABLE,
+      FilterExpression: "linkMarker = :value",
+      ExpressionAttributeValues: marshall({ ":value": linkMarker }),
+    });
+
+    const existsLink = await ddbClient.send(commandFindLink);
+
+    if (!existsLink.Items || existsLink.Items.length === 0) {
+      return createError(404, { message: "The link deactivated" });
+    }
+
+    const body = JSON.stringify(unmarshall(existsLink.Items[0]).link);
 
     return {
       statusCode: 200,
