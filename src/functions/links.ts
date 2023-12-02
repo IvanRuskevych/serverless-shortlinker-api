@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { DynamoDBClient, ScanCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, ScanCommand, UpdateItemCommand, UpdateItemCommandInput } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
@@ -13,6 +13,7 @@ const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 const headers = { "content-type": "application/json" };
 const linksTableName = "TableLinks";
 const BASE_URL = process.env.BASE_URL;
+
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     // check for authorized and get userID
@@ -36,6 +37,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
       //   userID,
       linkID,
       linkMarker,
+      linkClickCounter: 0,
       createdDate: expireDays > 0 ? createdDate : "",
       expireDate: expireDays > 0 ? expireDate : "",
     };
@@ -50,7 +52,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     return {
       statusCode: 201,
       headers,
-      body: JSON.stringify({ shortedLink }),
+      body: JSON.stringify({ shortedLink, BASE_URL }),
     };
   } catch (error) {
     return createError(500, { message: error });
@@ -87,9 +89,9 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
       return createError(400, { message: "Invalid link ==>> linkMarker" });
     }
 
+    // Find link by linkMarker
     const commandFindLink: ScanCommand = new ScanCommand({
       TableName: linksTableName,
-      // TableName: LINKS_TABLE,
       FilterExpression: "linkMarker = :value",
       ExpressionAttributeValues: marshall({ ":value": linkMarker }),
     });
@@ -100,6 +102,24 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
       return createError(404, { message: "The link deactivated" });
     }
 
+    // Increase the link counter
+    const linkID = existsLink.Items[0].linkID.S!;
+    // const originalLink = existsLink.Items[0].link.S!;
+
+    // find link by id & update counter
+    const paramsUpdateCounter: UpdateItemCommandInput = {
+      TableName: linksTableName,
+      Key: marshall({ linkID: linkID }),
+      UpdateExpression: "ADD linkClickCounter :value",
+      ExpressionAttributeValues: marshall({ ":value": 1 }),
+      ReturnValues: "ALL_NEW",
+    };
+
+    const commandUpdateCounter = new UpdateItemCommand(paramsUpdateCounter);
+
+    await ddbDocClient.send(commandUpdateCounter);
+
+    // return original link
     const body = JSON.stringify(unmarshall(existsLink.Items[0]).link);
 
     return {
