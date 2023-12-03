@@ -19,7 +19,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     // check for authorized and get userID
 
     const reqBody = JSON.parse(event.body as string);
-    const { expireDays = 0 } = reqBody as { expireDays: number };
+    const { link, expireDays = 0 } = reqBody as { link: string; expireDays: number };
 
     // if (!link) {}
     // if (expireDays>0) {} // => add to scheduler
@@ -33,26 +33,30 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     const expireDate = Date.now() + expireDays * 24 * 60 * 60 * 1000;
 
     const newLinkData = {
-      ...reqBody,
       //   userID,
+
       linkID,
       linkMarker,
+      link,
+
+      isActive: true,
       linkClickCounter: 0,
+
       createdDate: expireDays > 0 ? createdDate : "",
       expireDate: expireDays > 0 ? expireDate : "",
     };
 
-    const command: PutCommand = new PutCommand({
+    const commandNewLinkData: PutCommand = new PutCommand({
       TableName: linksTableName,
       Item: newLinkData,
     });
 
-    await ddbDocClient.send(command);
+    await ddbDocClient.send(commandNewLinkData);
 
     return {
       statusCode: 201,
       headers,
-      body: JSON.stringify({ shortedLink, BASE_URL }),
+      body: JSON.stringify({ shortedLink }),
     };
   } catch (error) {
     return createError(500, { message: error });
@@ -104,7 +108,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
     // Increase the link counter
     const linkID = existsLink.Items[0].linkID.S!;
-    // const originalLink = existsLink.Items[0].link.S!;
+    // const linkID2 = unmarshall(existsLink.Items[0]).linkID;
 
     // find link by id & update counter
     const paramsUpdateCounter: UpdateItemCommandInput = {
@@ -121,6 +125,37 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
     // return original link
     const body = JSON.stringify(unmarshall(existsLink.Items[0]).link);
+
+    return {
+      statusCode: 200,
+      headers,
+      body,
+    };
+  } catch (error) {
+    return createError(500, { message: error });
+  }
+};
+
+export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  try {
+    const linkID = event.pathParameters?.linkID as string;
+
+    if (!linkID) {
+      return createError(400, { message: "Invalid link ID" });
+    }
+
+    const paramsIsActiveLink: UpdateItemCommandInput = {
+      TableName: linksTableName,
+      Key: marshall({ linkID: linkID }),
+      UpdateExpression: "SET isActive = :value",
+      ExpressionAttributeValues: marshall({ ":value": false }),
+      ReturnValues: "ALL_NEW",
+    };
+
+    const commandIsActiveLink = new UpdateItemCommand(paramsIsActiveLink);
+    await ddbDocClient.send(commandIsActiveLink);
+
+    const body = JSON.stringify({ message: `Link (ID:${linkID}) deactivated successfully.` });
 
     return {
       statusCode: 200,

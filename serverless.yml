@@ -78,6 +78,13 @@ functions:
           path: /links/{linkMarker}
           method: get
 
+  deactivateLink:
+    handler: src/functions/links.deactivateLink
+    events:
+      - httpApi:
+          path: /links/deactivate/{linkID}
+          method: patch
+
   linksList:
     handler: src/functions/links.linksList
     events:
