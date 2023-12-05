@@ -48,7 +48,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
       linkClickCounter: 0,
 
       // createdDate: createdDate > 0 ? createdDate : "",
-      expireDate: expireDays > 0 ? expireDate : "",
+      expireDate: expireDays > 0 ? expireDate : 0,
     };
 
     const commandNewLinkData: PutCommand = new PutCommand({
@@ -110,23 +110,19 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
       return createError(404, { message: "Link does not exists" });
     }
 
-    const existsLink = unmarshall(Items[0]);
-    const linkID = existsLink.linkID;
-    const isActive = existsLink.isActive;
-    // const linkID2 = unmarshall(existsLink.Items[0]).linkID;
-    console.log("existsLink.isActive ==>>", existsLink.isActive);
+    const { linkID, link, isActive, isOneTime } = unmarshall(Items[0]);
 
-    if (!existsLink.isActive) {
+    if (!isActive) {
       return createError(404, { message: "The link was deactivated" });
     }
 
     // find link by id & check isOneTime
-    if (existsLink.isOneTime) {
+    if (isOneTime) {
       const paramsUpdateIsOneTime: UpdateItemCommandInput = {
         TableName: linksTableName,
         Key: marshall({ linkID }),
-        UpdateExpression: "SET isOneTime = :isOneTimeValue, isActive = :isActiveValue, linkClickCounter = :count",
-        ExpressionAttributeValues: marshall({ ":isOneTimeValue": false, ":isActiveValue": false, ":count": 1 }),
+        UpdateExpression: "SET isOneTime = :value1, isActive = :value2, linkClickCounter = :value3",
+        ExpressionAttributeValues: marshall({ ":value1": false, ":value2": false, ":value3": 1 }),
         ReturnValues: "ALL_NEW",
       };
       const commandUpdateIsOneTime = new UpdateItemCommand(paramsUpdateIsOneTime);
@@ -148,7 +144,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
     }
 
     // return original link
-    const body = JSON.stringify(existsLink.link);
+    const body = JSON.stringify(link);
 
     return {
       statusCode: 200,
@@ -195,14 +191,14 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
   try {
     const commandDeactivateExpiredLinks: ScanCommand = new ScanCommand({
       TableName: linksTableName,
-      FilterExpression: "isActive = :isActive AND expireDate > :currentDate",
-      ExpressionAttributeValues: marshall({ ":isActive": true, ":currentDate": Date.now() }),
+      FilterExpression: "isActive = :value1 AND expireDate < :currentDate",
+      ExpressionAttributeValues: marshall({ ":value1": true, ":currentDate": Date.now() }),
     });
 
     const { Items } = await ddbClient.send(commandDeactivateExpiredLinks);
 
     if (!Items || Items.length === 0) {
-      const body = JSON.stringify([]); // подумати що відправити
+      const body = JSON.stringify({ message: "Deactivation links not found" }); // подумати що відправити
 
       return {
         statusCode: 200,
@@ -210,8 +206,11 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       };
     }
 
-    for (const item of Items) {
-      const linkID = item.linkID.S!;
+    const linksForDeactivating = Items.map((item) => unmarshall(item));
+
+    for (const item of linksForDeactivating) {
+      // const linkID = item.linkID.S!;
+      const { linkID } = item;
 
       const paramsUpdateIsActive: UpdateItemCommandInput = {
         TableName: linksTableName,
@@ -225,7 +224,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       await ddbDocClient.send(commandUpdateIsActive);
     }
 
-    const body = JSON.stringify([]); // подумати що відправити
+    const body = JSON.stringify({ message: `Deactivated ${linksForDeactivating.length} links` }); // подумати що відправити
 
     return {
       statusCode: 200,

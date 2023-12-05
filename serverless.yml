@@ -63,8 +63,6 @@ functions:
 
   createNewLink:
     handler: src/functions/links.createNewLink
-    # environment:
-    #   REST_API_ID: { Ref: "ApiGatewayRestApi" }
 
     events:
       - httpApi:
@@ -85,6 +83,14 @@ functions:
           path: /links/deactivate/{linkID}
           method: patch
 
+  deactivateLinkCron:
+    handler: src/functions/links.deactivateLinkCron
+    events:
+      # - schedule: "cron(0 0 * * *)"
+      - httpApi:
+          path: /links/deactivate
+          method: patch
+
   linksList:
     handler: src/functions/links.linksList
     events:
@@ -94,14 +100,8 @@ functions:
 
 resources:
   Resources:
-    # ApiGatewayRestApi:
-    #   Type: "AWS::ApiGateway::RestApi"
-    #   Properties:
-    #     Name: ApiGatewayRestApi
-
     TableUsers:
       Type: "AWS::DynamoDB::Table"
-      # DeletionPolicy: Retain
       Properties:
         TableName: TableUsers
 
