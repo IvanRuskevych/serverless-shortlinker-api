@@ -1,17 +1,25 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { DynamoDBClient, ScanCommand, UpdateItemCommand, UpdateItemCommandInput } from "@aws-sdk/client-dynamodb";
+import {
+  DynamoDBClient,
+  GetItemCommand,
+  ScanCommand,
+  UpdateItemCommand,
+  UpdateItemCommandInput,
+} from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
 import { v4 } from "uuid";
 
 import { createError } from "../utils/errors";
+import { getItemsFromTable } from "../services";
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
 const headers = { "content-type": "application/json" };
 const linksTableName = "TableLinks";
+const usersTableName = "TableUsers";
 const BASE_URL = process.env.BASE_URL;
 
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -19,14 +27,16 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     // check for authorized and get userID
 
     const reqBody = JSON.parse(event.body as string);
-    const {
-      link,
-      expireDays = 0,
-      isOneTime = false,
-    } = reqBody as { link: string; expireDays: number; isOneTime: Boolean };
+    const { link, expireDays, isOneTime = false } = reqBody as { link: string; expireDays: number; isOneTime: Boolean };
 
-    // if (!link) {}
-    // if (expireDays>0) {} // => add to scheduler
+    // if (!link) {
+    //   const body = JSON.stringify({ message: "Link is required" });
+    //   return {
+    //     statusCode: 400,
+    //     headers,
+    //     body,
+    //   };
+    // }
 
     const linkID: string = v4();
     const linkMarker: string = linkID.slice(0, 6);
@@ -70,15 +80,9 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
 
 export const linksList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
-    const command: ScanCommand = new ScanCommand({
-      TableName: linksTableName,
-    });
+    const unmarshalledLinks = await getItemsFromTable(linksTableName);
 
-    const { Items } = await ddbDocClient.send(command);
-
-    const unmarshalledItems = Items!.map((item) => unmarshall(item));
-
-    const body = JSON.stringify(unmarshalledItems);
+    const body = JSON.stringify(unmarshalledLinks);
 
     return {
       statusCode: 200,
@@ -129,7 +133,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
       await ddbDocClient.send(commandUpdateIsOneTime);
     } else {
-      // Increase the link counter
+      // Increase the link counter for non-oneTime links
       const paramsUpdateCounter: UpdateItemCommandInput = {
         TableName: linksTableName,
         Key: marshall({ linkID }),
@@ -162,6 +166,21 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
 
     if (!linkID) {
       return createError(400, { message: "Invalid link ID" });
+    }
+    const paramsFindLinkById = {
+      TableName: linksTableName,
+      Key: marshall({ linkID: linkID }),
+    };
+    const commandFindLinkById: GetItemCommand = new GetItemCommand(paramsFindLinkById);
+
+    const { Item } = await ddbClient.send(commandFindLinkById);
+
+    if (!Item) {
+      return createError(404, { message: `Link with ID: ${linkID} does not exists` });
+    }
+
+    if (!Item.isActive) {
+      return createError(200, { message: `Link with ID: ${linkID} is already deactivated` });
     }
 
     const paramsIsActiveLink: UpdateItemCommandInput = {
@@ -198,7 +217,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
     const { Items } = await ddbClient.send(commandDeactivateExpiredLinks);
 
     if (!Items || Items.length === 0) {
-      const body = JSON.stringify({ message: "Deactivation links not found" }); // подумати що відправити
+      const body = JSON.stringify({ message: "Deactivation links not found" });
 
       return {
         statusCode: 200,
@@ -210,7 +229,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
     for (const item of linksForDeactivating) {
       // const linkID = item.linkID.S!;
-      const { linkID } = item;
+      const { linkID } = item as { linkID: string };
 
       const paramsUpdateIsActive: UpdateItemCommandInput = {
         TableName: linksTableName,
@@ -218,13 +237,40 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
         UpdateExpression: "SET isActive = :value",
         ExpressionAttributeValues: marshall({ ":value": false }),
       };
-
       const commandUpdateIsActive = new UpdateItemCommand(paramsUpdateIsActive);
 
       await ddbDocClient.send(commandUpdateIsActive);
     }
 
-    const body = JSON.stringify({ message: `Deactivated ${linksForDeactivating.length} links` }); // подумати що відправити
+    // // 1 Get userID from linksForDeactivating,
+    // // 2 userID мають бути унікальними!!!
+    // const usersID = [...new Set(linksForDeactivating.map((item) => item.userID.S))];
+
+    // // const entriesForEmailMessage = linksForDeactivating.map((link) => {});
+
+    // // 3 Get emails for all userID ==>>
+    // let usersEmail = [];
+
+    // for (const id of usersID) {
+    //   try {
+    //     const commandGetUsersByID: GetItemCommand = new GetItemCommand({
+    //       TableName: usersTableName,
+    //       Key: id,
+    //     });
+
+    //     const { Item } = await ddbClient.send(commandGetUsersByID);
+
+    //     if (Item) {
+    //       usersEmail.push(Item.email.S);
+    //     }
+    //   } catch (error) {
+    //     return createError(500, { message: "Failed to get users email" });
+    //   }
+    // }
+
+    // const uniqueUsersEmail = [...new Set(usersEmail)];
+
+    const body = JSON.stringify({ message: `Deactivated ${linksForDeactivating.length} links` });
 
     return {
       statusCode: 200,
