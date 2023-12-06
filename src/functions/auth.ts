@@ -7,11 +7,9 @@ import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 import { v4 } from "uuid";
 
 import { User } from "../schemas/interfaces";
-
 import { createError } from "../utils/errors";
 
-import { hashPassword, validatePassword } from "../services/password.services";
-import { generateTokens } from "../services/tokens.services";
+import { generateTokens, getItemsFromTable, hashPassword, updateTokensInTable, validatePassword } from "../services";
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
@@ -81,19 +79,21 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     // find user by id
     const commandFindUserByEmail: ScanCommand = new ScanCommand({
       TableName: usersTableName,
-      // TableName: USERS_TABLE,
       FilterExpression: "email = :value",
       ExpressionAttributeValues: marshall({ ":value": email }),
     });
 
-    const existsUser = await ddbClient.send(commandFindUserByEmail);
+    const { Items } = await ddbClient.send(commandFindUserByEmail);
+    // const { Items } = existsUser;
 
-    if (!existsUser.Items || existsUser.Items.length === 0) {
+    if (!Items || Items.length === 0) {
       return createError(404, { message: "User not found" });
     }
 
     // validate psw
-    const passwordDB = existsUser.Items[0].password.S!;
+    // const passwordDB = Items[0].password.S!;
+    const passwordDB = unmarshall(Items[0]).password;
+
     const isValidPassword = validatePassword(password, passwordDB);
 
     if (!isValidPassword) {
@@ -104,24 +104,11 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     }
 
     // create new tokens
-    const userID = existsUser.Items[0].userID.S!;
+    const userID = Items[0].userID.S!;
     const { accessToken, refreshToken } = generateTokens({ userID });
-
-    // find user by id & update tokens
-    const paramsUpdateToken: UpdateItemCommandInput = {
-      TableName: usersTableName,
-      // TableName: USERS_TABLE,
-      Key: marshall({ userID: userID }),
-      UpdateExpression: "SET accessToken = :value1, refreshToken = :value2",
-      ExpressionAttributeValues: marshall({ ":value1": accessToken, ":value2": refreshToken }),
-      ReturnValues: "ALL_NEW",
-    };
-
-    const commandUpdateTokens = new UpdateItemCommand(paramsUpdateToken);
-
-    await ddbDocClient.send(commandUpdateTokens);
-
     const body = JSON.stringify({ userID, accessToken, refreshToken });
+
+    await updateTokensInTable(usersTableName, userID, accessToken, refreshToken);
 
     return {
       statusCode: 200,
@@ -134,16 +121,9 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 };
 
 export const usersList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  const command: ScanCommand = new ScanCommand({
-    TableName: usersTableName,
-    // TableName: USERS_TABLE,
-  });
+  const unmarshalledUsersList = await getItemsFromTable(usersTableName);
 
-  const { Items } = await ddbDocClient.send(command);
-
-  const unmarshalledItems = Items!.map((item) => unmarshall(item));
-
-  const body = JSON.stringify(unmarshalledItems);
+  const body = JSON.stringify(unmarshalledUsersList);
 
   return {
     statusCode: 200,
@@ -151,23 +131,3 @@ export const usersList = async (event: APIGatewayProxyEvent): Promise<APIGateway
     body,
   };
 };
-
-// async function isUserExists(email: string): Promise<any> {
-//   const command: ScanCommand = new ScanCommand({
-//     TableName: usersTableName,
-//     FilterExpression: "email = :value",
-//     ExpressionAttributeValues: marshall({ ":value": email }),
-//   });
-
-//   const { Items } = await client.send(command);
-
-//   if (!Items || Items.length === 0) {
-//     throw new HttpError(404, { message: "User not found" });
-//   }
-
-//   if (Items && Items.length > 0) {
-//     throw new HttpError(409, { message: "Email in use" });
-//   }
-
-//   return Items[0];
-// }
