@@ -19,6 +19,8 @@ provider:
     #https://udhcf9fhw2.execute-api.eu-central-1.amazonaws.com/links/d0f280
     BASE_URL: !GetAtt HttpApi.ApiEndpoint
 
+    SQS_DEACTIVATION_QUEUE_URL: !Ref DeactivationQueue
+
   iam:
     role:
       statements:
@@ -69,6 +71,13 @@ functions:
           path: /links/create-new-link
           method: post
 
+  linksList:
+    handler: src/functions/links.linksList
+    events:
+      - httpApi:
+          path: /links/list
+          method: get
+
   redirectToOriginalLink:
     handler: src/functions/links.redirectToOriginalLink
     events:
@@ -91,12 +100,12 @@ functions:
           path: /links/deactivate
           method: get
 
-  linksList:
-    handler: src/functions/links.linksList
-    events:
-      - httpApi:
-          path: /links/list
-          method: get
+  # ses-services:
+  #   handler: src/services/ses.sendEmailsForDeactivatedLinks
+  #   event:
+  #     - sqs:
+  #         arn: !GetAtt DeactivationQueue.Arn
+  #         batchSize: 10
 
 resources:
   Resources:
@@ -133,4 +142,11 @@ resources:
         ProvisionedThroughput:
           ReadCapacityUnits: 5
           WriteCapacityUnits: 5
+
+    # DeactivationQueue:
+    #   Type: AWS::SQS::Queue
+    #   Properties:
+    #     QueueName: deactivation-queue
+    #     VisibilityTimeout: 900
+    #     MessageRetentionPeriod: 86400
 # TableName: ${self:provider.environment.DYNAMODB_TABLE}

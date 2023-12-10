@@ -12,6 +12,8 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.454.0",
+    "@aws-sdk/client-ses": "^3.470.0",
+    "@aws-sdk/client-sqs": "^3.470.0",
     "@aws-sdk/lib-dynamodb": "^3.454.0",
     "@aws-sdk/util-dynamodb": "^3.454.0",
     "@types/uuid": "^9.0.7",
@@ -26,6 +28,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.9.2",
+    "serverless-esbuild": "^1.50.0",
     "serverless-plugin-typescript": "^2.1.5"
   }
 }
