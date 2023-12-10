@@ -89,7 +89,7 @@ functions:
       # - schedule: "cron(0 0 * * *)"
       - httpApi:
           path: /links/deactivate
-          method: patch
+          method: get
 
   linksList:
     handler: src/functions/links.linksList
