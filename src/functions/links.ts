@@ -2,6 +2,7 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import {
   DynamoDBClient,
   GetItemCommand,
+  GetItemCommandInput,
   ScanCommand,
   UpdateItemCommand,
   UpdateItemCommandInput,
@@ -13,6 +14,7 @@ import { v4 } from "uuid";
 
 import { createError } from "../utils/errors";
 import { getItemsFromTable } from "../services";
+import { DeactivatedLink } from "../schemas/interfaces";
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
@@ -47,7 +49,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     const expireDate = Date.now() + expireDays * 24 * 60 * 60 * 1000;
 
     const newLinkData = {
-      //   userID,
+      userID: v4(),
 
       linkID,
       linkMarker,
@@ -57,7 +59,6 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
       isActive: true,
       linkClickCounter: 0,
 
-      // createdDate: createdDate > 0 ? createdDate : "",
       expireDate: expireDays > 0 ? expireDate : 0,
     };
 
@@ -167,10 +168,12 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
     if (!linkID) {
       return createError(400, { message: "Invalid link ID" });
     }
+
     const paramsFindLinkById = {
       TableName: linksTableName,
       Key: marshall({ linkID: linkID }),
     };
+
     const commandFindLinkById: GetItemCommand = new GetItemCommand(paramsFindLinkById);
 
     const { Item } = await ddbClient.send(commandFindLinkById);
@@ -192,6 +195,7 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
     };
 
     const commandIsActiveLink = new UpdateItemCommand(paramsIsActiveLink);
+
     await ddbDocClient.send(commandIsActiveLink);
 
     const body = JSON.stringify({ message: `Link (ID:${linkID}) deactivated successfully.` });
@@ -208,6 +212,7 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
 
 export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
+    // Links for deactivation does`t exists
     const commandDeactivateExpiredLinks: ScanCommand = new ScanCommand({
       TableName: linksTableName,
       FilterExpression: "isActive = :value1 AND expireDate < :currentDate",
@@ -225,52 +230,69 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       };
     }
 
+    // Links for deactivation exists
+
     const linksForDeactivating = Items.map((item) => unmarshall(item));
 
-    for (const item of linksForDeactivating) {
-      // const linkID = item.linkID.S!;
-      const { linkID } = item as { linkID: string };
+    const userIdsSet = [...new Set(linksForDeactivating.map((item) => item.userID))];
 
-      const paramsUpdateIsActive: UpdateItemCommandInput = {
+    // console.log("~ usersIdList:", userIdsSet);
+
+    // Find by userID emails to send deactivated links
+    let emailsList = [];
+
+    for (const item of userIdsSet) {
+      // console.log("item", item);
+      const paramsFindEmailsByUserID: GetItemCommandInput = {
+        TableName: usersTableName,
+        Key: marshall({ userID: item }),
+      };
+
+      const commandFindEmailsByUserID: GetItemCommand = new GetItemCommand(paramsFindEmailsByUserID);
+
+      const { Item } = await ddbClient.send(commandFindEmailsByUserID);
+
+      const user = unmarshall(Item!);
+      // console.log(" ~ user:", user);
+
+      emailsList.push({ userID: user.userID, email: user.email });
+    }
+    // console.log("🚀 emailsList:", emailsList);
+
+    let deactivatedLinksWithEmails: DeactivatedLink[] = [];
+
+    // console.log("~ linksForDeactivating:", linksForDeactivating);
+
+    for (const item of linksForDeactivating) {
+      const userID = item.userID;
+      const linkID = item.linkID;
+      const link = item.link;
+
+      // console.log("linksForDeactivating => item: ", userID, linkID, link);
+
+      emailsList.find((item) => {
+        if (item.userID === userID) {
+          deactivatedLinksWithEmails.push({ userID, linkID, link, email: item.email });
+        }
+      });
+
+      // SET isActive = false
+      const paramsIsActiveLink: UpdateItemCommandInput = {
         TableName: linksTableName,
-        Key: marshall({ linkID }),
+        Key: marshall({ linkID: linkID }),
         UpdateExpression: "SET isActive = :value",
         ExpressionAttributeValues: marshall({ ":value": false }),
+        ReturnValues: "ALL_NEW",
       };
-      const commandUpdateIsActive = new UpdateItemCommand(paramsUpdateIsActive);
 
-      await ddbDocClient.send(commandUpdateIsActive);
+      const commandIsActiveLink = new UpdateItemCommand(paramsIsActiveLink);
+      await ddbDocClient.send(commandIsActiveLink);
     }
 
-    // // 1 Get userID from linksForDeactivating,
-    // // 2 userID мають бути унікальними!!!
-    // const usersID = [...new Set(linksForDeactivating.map((item) => item.userID.S))];
-
-    // // const entriesForEmailMessage = linksForDeactivating.map((link) => {});
-
-    // // 3 Get emails for all userID ==>>
-    // let usersEmail = [];
-
-    // for (const id of usersID) {
-    //   try {
-    //     const commandGetUsersByID: GetItemCommand = new GetItemCommand({
-    //       TableName: usersTableName,
-    //       Key: id,
-    //     });
-
-    //     const { Item } = await ddbClient.send(commandGetUsersByID);
-
-    //     if (Item) {
-    //       usersEmail.push(Item.email.S);
-    //     }
-    //   } catch (error) {
-    //     return createError(500, { message: "Failed to get users email" });
-    //   }
-    // }
-
-    // const uniqueUsersEmail = [...new Set(usersEmail)];
-
-    const body = JSON.stringify({ message: `Deactivated ${linksForDeactivating.length} links` });
+    const body = JSON.stringify({
+      deactivatedLinksWithEmails,
+      message: `Deactivated ${linksForDeactivating.length} links`,
+    });
 
     return {
       statusCode: 200,
@@ -278,6 +300,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       body,
     };
   } catch (error) {
+    console.error("Помилка у deactivateLinkCron:", error);
     return createError(500, { message: error });
   }
 };
