@@ -15,13 +15,16 @@ import { v4 } from "uuid";
 import { createError } from "../utils/errors";
 import { getItemsFromTable } from "../services";
 import { DeactivatedLink } from "../schemas/interfaces";
+import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+const sqs = new SQSClient();
 
 const headers = { "content-type": "application/json" };
 const linksTableName = "TableLinks";
 const usersTableName = "TableUsers";
+const SQS_DEACTIVATION_QUEUE_URL = "";
 const BASE_URL = process.env.BASE_URL;
 
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -289,6 +292,21 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       await ddbDocClient.send(commandIsActiveLink);
     }
 
+    // Queue service
+    const messages = deactivatedLinksWithEmails.map((item) => ({ Id: v4(), MessageBody: JSON.stringify(item) }));
+    try {
+      await sqs.send(
+        new SendMessageBatchCommand({
+          QueueUrl: SQS_DEACTIVATION_QUEUE_URL,
+          Entries: messages,
+        })
+      );
+    } catch (error) {
+      console.error("Failed to send messages to SQS:", error);
+      return createError(500, { message: error });
+    }
+
+    // Create body for return
     const body = JSON.stringify({
       deactivatedLinksWithEmails,
       message: `Deactivated ${linksForDeactivating.length} links`,
