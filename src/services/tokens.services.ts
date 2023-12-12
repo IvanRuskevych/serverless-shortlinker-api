@@ -11,16 +11,13 @@ export const generateTokens = (payload: { userID: string }): { accessToken: stri
   };
 };
 
-// export const verifyToken = (token: string, secret: string): JwtPayload => {
-//   try {
-//     const isVerifyToken = jwt.verify(token, secret) as JwtPayload;
-//     if (!isVerifyToken) {
-//       return createError(401, { message: "Not authorized" });
-//     }
-//     return isVerifyToken;
-//   } catch (error) {
-//     return createError(401, { message: "Not authorized" });
-//   }
-// };
-
 export const saveToken = async (id: string) => {};
+
+export const verifyToken = (token: string): JwtPayload => {
+  try {
+    const payload = jwt.verify(token, "ACCESS_SECRET") as JwtPayload;
+    return payload;
+  } catch (error) {
+    return createError(401, { message: "Not authorized" });
+  }
+};

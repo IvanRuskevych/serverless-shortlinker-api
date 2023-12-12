@@ -31,6 +31,13 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
   try {
     // check for authorized and get userID
 
+    const userID = event.requestContext?.authorizer?.principalId;
+    console.log("createNewLink ~ userID:", userID);
+
+    if (!userID) {
+      return createError(401, { message: "Not authorized" });
+    }
+
     const reqBody = JSON.parse(event.body as string);
     const { link, expireDays, isOneTime = false } = reqBody as { link: string; expireDays: number; isOneTime: Boolean };
 

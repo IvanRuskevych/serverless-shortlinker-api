@@ -40,6 +40,9 @@ provider:
             #- { "Fn::GetAtt": ["${self:provider.environment.LINKS_TABLE}", "Arn"] }
 
 functions:
+  customAuthorizer:
+    handler: src/functions/authorizer.main
+
   signUp:
     handler: src/functions/auth.signUp
     events:
@@ -70,6 +73,14 @@ functions:
       - httpApi:
           path: /links/create-new-link
           method: post
+          authorizer:
+            name: customAuthorizer
+            resultTtlInSeconds: 60
+            identitySource: method.request.header.authorizationToken
+          type: request
+          request:
+            schemas:
+              application/json: ${file(src/models/createLink.json)}
 
   linksList:
     handler: src/functions/links.linksList

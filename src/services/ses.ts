@@ -1,6 +1,7 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const ses = new SESClient();
+
 export const sendEmailsForDeactivatedLinks = async (event: { Records: any }) => {
   const records = event.Records;
 
