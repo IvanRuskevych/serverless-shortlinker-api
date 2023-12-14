@@ -1,6 +1,7 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 const ses = new SESClient();
+const { SES_EMAIL } = process.env;
 
 export const sendEmailsForDeactivatedLinks = async (event: { Records: any }) => {
   const records = event.Records;
@@ -11,7 +12,7 @@ export const sendEmailsForDeactivatedLinks = async (event: { Records: any }) => 
 
       await ses.send(
         new SendEmailCommand({
-          Source: "fullstack.dev.goit@gmail.com",
+          Source: SES_EMAIL,
 
           Destination: {
             ToAddresses: [message.ToAddresses],
