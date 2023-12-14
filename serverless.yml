@@ -12,14 +12,14 @@ provider:
   region: eu-central-1
 
   environment:
-    USERS_TABLE: "TableUsers"
-    LINKS_TABLE: "TableLinks"
+    USERS_TABLE: ${self:service}-${sls:stage}-USERS_TABLE
+    LINKS_TABLE: ${self:service}-${sls:stage}-LINKS_TABLE
     #DYNAMODB_TABLE: ${self:service}-${opt:stage, self:provider.stage}
 
     #https://udhcf9fhw2.execute-api.eu-central-1.amazonaws.com/links/d0f280
     BASE_URL: !GetAtt HttpApi.ApiEndpoint
 
-    SQS_DEACTIVATION_QUEUE_URL: !Ref DeactivationQueue
+    # SQS_DEACTIVATION_QUEUE_URL: !Ref DeactivationQueue
 
   iam:
     role:
@@ -32,17 +32,11 @@ provider:
             - dynamodb:PutItem
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
-          # Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE}"
           Resource:
             - { "Fn::GetAtt": ["TableUsers", "Arn"] }
-            # - { "Fn::GetAtt": ["${self:provider.environment.USERS_TABLE}", "Arn"] }
             - { "Fn::GetAtt": ["TableLinks", "Arn"] }
-            #- { "Fn::GetAtt": ["${self:provider.environment.LINKS_TABLE}", "Arn"] }
 
 functions:
-  customAuthorizer:
-    handler: src/functions/authorizer.main
-
   signUp:
     handler: src/functions/auth.signUp
     events:
@@ -73,14 +67,6 @@ functions:
       - httpApi:
           path: /links/create-new-link
           method: post
-          authorizer:
-            name: customAuthorizer
-            resultTtlInSeconds: 60
-            identitySource: method.request.header.authorizationToken
-          type: request
-          request:
-            schemas:
-              application/json: ${file(src/models/createLink.json)}
 
   linksList:
     handler: src/functions/links.linksList
@@ -123,7 +109,7 @@ resources:
     TableUsers:
       Type: "AWS::DynamoDB::Table"
       Properties:
-        TableName: TableUsers
+        TableName: ${self:provider.environment.USERS_TABLE}
 
         AttributeDefinitions:
           - AttributeName: userID
@@ -140,7 +126,7 @@ resources:
     TableLinks:
       Type: "AWS::DynamoDB::Table"
       Properties:
-        TableName: TableLinks
+        TableName: ${self:provider.environment.LINKS_TABLE}
 
         AttributeDefinitions:
           - AttributeName: linkID
@@ -161,3 +147,5 @@ resources:
     #     VisibilityTimeout: 900
     #     MessageRetentionPeriod: 86400
 # TableName: ${self:provider.environment.DYNAMODB_TABLE}
+# - { "Fn::GetAtt": ["TableUsers", "Arn"] }
+# - { "Fn::GetAtt": ["TableLinks", "Arn"] }

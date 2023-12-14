@@ -1,6 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 
-import { DynamoDBClient, ScanCommand, UpdateItemCommand, UpdateItemCommandInput } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, ScanCommand } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
 
@@ -14,18 +14,17 @@ import { generateTokens, getItemsFromTable, hashPassword, updateTokensInTable, v
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 
-const usersTableName = "TableUsers";
-// const { USERS_TABLE } = process.env;
+const { USERS_TABLE } = process.env;
 const headers = { "content-type": "application/json" };
 
 export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
+    console.log(" ~ USERS_TABLE:", USERS_TABLE)
     const reqBody = JSON.parse(event.body as string);
     const { email, password } = reqBody;
 
     const scanCommandEmail: ScanCommand = new ScanCommand({
-      TableName: usersTableName,
-      // TableName: USERS_TABLE,
+      TableName: USERS_TABLE,
       FilterExpression: "email = :value",
       ExpressionAttributeValues: marshall({ ":value": email }),
     });
@@ -48,8 +47,7 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     };
 
     const command: PutCommand = new PutCommand({
-      TableName: usersTableName,
-      // TableName: USERS_TABLE,
+      TableName: USERS_TABLE,
       Item: newUser,
     });
 
@@ -78,7 +76,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 
     // find user by id
     const commandFindUserByEmail: ScanCommand = new ScanCommand({
-      TableName: usersTableName,
+      TableName: USERS_TABLE,
       FilterExpression: "email = :value",
       ExpressionAttributeValues: marshall({ ":value": email }),
     });
@@ -91,7 +89,6 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     }
 
     // validate psw
-    // const passwordDB = Items[0].password.S!;
     const passwordDB = unmarshall(Items[0]).password;
 
     const isValidPassword = validatePassword(password, passwordDB);
@@ -108,7 +105,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     const { accessToken, refreshToken } = generateTokens({ userID });
     const body = JSON.stringify({ userID, accessToken, refreshToken });
 
-    await updateTokensInTable(usersTableName, userID, accessToken, refreshToken);
+    await updateTokensInTable(USERS_TABLE!, userID, accessToken, refreshToken);
 
     return {
       statusCode: 200,
@@ -121,7 +118,7 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 };
 
 export const usersList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  const unmarshalledUsersList = await getItemsFromTable(usersTableName);
+  const unmarshalledUsersList = await getItemsFromTable(USERS_TABLE!);
 
   const body = JSON.stringify(unmarshalledUsersList);
 

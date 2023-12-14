@@ -22,44 +22,38 @@ const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 const sqs = new SQSClient();
 
 const headers = { "content-type": "application/json" };
-const linksTableName = "TableLinks";
-const usersTableName = "TableUsers";
-const SQS_DEACTIVATION_QUEUE_URL = "";
-const BASE_URL = process.env.BASE_URL;
+const {BASE_URL, USERS_TABLE, LINKS_TABLE, SQS_DEACTIVATION_QUEUE_URL} = process.env;
 
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     // check for authorized and get userID
-
-    const userID = event.requestContext?.authorizer?.principalId;
-    console.log("createNewLink ~ userID:", userID);
-
-    if (!userID) {
-      return createError(401, { message: "Not authorized" });
-    }
+    // const userID = event.requestContext?.authorizer?.principalId;
+    // console.log("createNewLink ~ userID:", userID);
+    // if (!userID) {
+    //   return createError(401, { message: "Not authorized" });
+    // }
 
     const reqBody = JSON.parse(event.body as string);
     const { link, expireDays, isOneTime = false } = reqBody as { link: string; expireDays: number; isOneTime: Boolean };
 
-    // if (!link) {
-    //   const body = JSON.stringify({ message: "Link is required" });
-    //   return {
-    //     statusCode: 400,
-    //     headers,
-    //     body,
-    //   };
-    // }
+    if (!link || link==="") {
+      const body = JSON.stringify({ message: "Link is required" });
+      return {
+        statusCode: 400,
+        headers,
+        body,
+      };
+    }
 
     const linkID: string = v4();
     const linkMarker: string = linkID.slice(0, 6);
 
     const shortedLink: string = `${BASE_URL}/links/${linkMarker}`;
 
-    // const createdDate = Date.now();
     const expireDate = Date.now() + expireDays * 24 * 60 * 60 * 1000;
 
     const newLinkData = {
-      userID: v4(),
+      // userID:"5a416117-d69d-482f-8d16-43844142889d",
 
       linkID,
       linkMarker,
@@ -73,7 +67,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     };
 
     const commandNewLinkData: PutCommand = new PutCommand({
-      TableName: linksTableName,
+      TableName: LINKS_TABLE,
       Item: newLinkData,
     });
 
@@ -91,7 +85,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
 
 export const linksList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
-    const unmarshalledLinks = await getItemsFromTable(linksTableName);
+    const unmarshalledLinks = await getItemsFromTable(LINKS_TABLE!);
 
     const body = JSON.stringify(unmarshalledLinks);
 
@@ -115,7 +109,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
     // Find link by linkMarker
     const commandFindLink: ScanCommand = new ScanCommand({
-      TableName: linksTableName,
+      TableName: LINKS_TABLE,
       FilterExpression: "linkMarker = :value",
       ExpressionAttributeValues: marshall({ ":value": linkMarker }),
     });
@@ -134,7 +128,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
     // find link by id & check isOneTime
     if (isOneTime) {
       const paramsUpdateIsOneTime: UpdateItemCommandInput = {
-        TableName: linksTableName,
+        TableName: LINKS_TABLE,
         Key: marshall({ linkID }),
         UpdateExpression: "SET isOneTime = :value1, isActive = :value2, linkClickCounter = :value3",
         ExpressionAttributeValues: marshall({ ":value1": false, ":value2": false, ":value3": 1 }),
@@ -146,7 +140,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
     } else {
       // Increase the link counter for non-oneTime links
       const paramsUpdateCounter: UpdateItemCommandInput = {
-        TableName: linksTableName,
+        TableName: LINKS_TABLE,
         Key: marshall({ linkID }),
         UpdateExpression: "ADD linkClickCounter :value",
         ExpressionAttributeValues: marshall({ ":value": 1 }),
@@ -160,7 +154,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
     // return original link
     const body = JSON.stringify(link);
-
+    
     return {
       statusCode: 200,
       headers,
@@ -174,30 +168,32 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const linkID = event.pathParameters?.linkID as string;
+    console.log(" ~ deactivateLink ~ linkID:", linkID)
 
     if (!linkID) {
       return createError(400, { message: "Invalid link ID" });
     }
 
     const paramsFindLinkById = {
-      TableName: linksTableName,
+      TableName: LINKS_TABLE,
       Key: marshall({ linkID: linkID }),
     };
 
     const commandFindLinkById: GetItemCommand = new GetItemCommand(paramsFindLinkById);
 
     const { Item } = await ddbClient.send(commandFindLinkById);
+    // console.log(" ~ deactivateLink ~ Item:", Item)
 
     if (!Item) {
       return createError(404, { message: `Link with ID: ${linkID} does not exists` });
     }
 
-    if (!Item.isActive) {
+    if (!Item.isActive.BOOL!) {
       return createError(200, { message: `Link with ID: ${linkID} is already deactivated` });
     }
 
     const paramsIsActiveLink: UpdateItemCommandInput = {
-      TableName: linksTableName,
+      TableName: LINKS_TABLE,
       Key: marshall({ linkID: linkID }),
       UpdateExpression: "SET isActive = :value",
       ExpressionAttributeValues: marshall({ ":value": false }),
@@ -222,15 +218,16 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
 
 export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
-    // Links for deactivation does`t exists
     const commandDeactivateExpiredLinks: ScanCommand = new ScanCommand({
-      TableName: linksTableName,
+      TableName: LINKS_TABLE,
       FilterExpression: "isActive = :value1 AND expireDate < :currentDate",
       ExpressionAttributeValues: marshall({ ":value1": true, ":currentDate": Date.now() }),
     });
-
+    
     const { Items } = await ddbClient.send(commandDeactivateExpiredLinks);
-
+    // console.log(" ~ Items:", Items)
+    
+    // Links for deactivation does`t exists
     if (!Items || Items.length === 0) {
       const body = JSON.stringify({ message: "Deactivation links not found" });
 
@@ -241,12 +238,10 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
     }
 
     // Links for deactivation exists
-
     const linksForDeactivating = Items.map((item) => unmarshall(item));
 
     const userIdsSet = [...new Set(linksForDeactivating.map((item) => item.userID))];
 
-    // console.log("~ usersIdList:", userIdsSet);
 
     // Find by userID emails to send deactivated links
     let emailsList = [];
@@ -254,7 +249,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
     for (const item of userIdsSet) {
       // console.log("item", item);
       const paramsFindEmailsByUserID: GetItemCommandInput = {
-        TableName: usersTableName,
+        TableName: USERS_TABLE,
         Key: marshall({ userID: item }),
       };
 
@@ -271,14 +266,10 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
     let deactivatedLinksWithEmails: DeactivatedLink[] = [];
 
-    // console.log("~ linksForDeactivating:", linksForDeactivating);
-
     for (const item of linksForDeactivating) {
       const userID = item.userID;
       const linkID = item.linkID;
       const link = item.link;
-
-      // console.log("linksForDeactivating => item: ", userID, linkID, link);
 
       emailsList.find((item) => {
         if (item.userID === userID) {
@@ -288,7 +279,7 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
       // SET isActive = false
       const paramsIsActiveLink: UpdateItemCommandInput = {
-        TableName: linksTableName,
+        TableName: LINKS_TABLE,
         Key: marshall({ linkID: linkID }),
         UpdateExpression: "SET isActive = :value",
         ExpressionAttributeValues: marshall({ ":value": false }),
@@ -300,18 +291,18 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
     }
 
     // Queue service
-    const messages = deactivatedLinksWithEmails.map((item) => ({ Id: v4(), MessageBody: JSON.stringify(item) }));
-    try {
-      await sqs.send(
-        new SendMessageBatchCommand({
-          QueueUrl: SQS_DEACTIVATION_QUEUE_URL,
-          Entries: messages,
-        })
-      );
-    } catch (error) {
-      console.error("Failed to send messages to SQS:", error);
-      return createError(500, { message: error });
-    }
+    // const messages = deactivatedLinksWithEmails.map((item) => ({ Id: v4(), MessageBody: JSON.stringify(item) }));
+    // try {
+    //   await sqs.send(
+    //     new SendMessageBatchCommand({
+    //       QueueUrl: SQS_DEACTIVATION_QUEUE_URL,
+    //       Entries: messages,
+    //     })
+    //   );
+    // } catch (error) {
+    //   console.error("Failed to send messages to SQS:", error);
+    //   return createError(500, { message: error });
+    // }
 
     // Create body for return
     const body = JSON.stringify({
@@ -325,7 +316,6 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       body,
     };
   } catch (error) {
-    console.error("Помилка у deactivateLinkCron:", error);
     return createError(500, { message: error });
   }
 };
