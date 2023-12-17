@@ -13,7 +13,7 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { v4 } from 'uuid';
 
 import { createError } from '../utils/errors';
-import { getItemsFromTable } from '../services';
+import { getItemsFromTable, getUserLinks } from '../services';
 import { DeactivatedLink } from '../schemas/interfaces';
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 
@@ -92,10 +92,20 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
 };
 
 export const linksList = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-  try {
-    const unmarshalledLinks = await getItemsFromTable(LINKS_TABLE!);
+  const userID = event.requestContext?.authorizer?.lambda.userID;
+  console.log('event.requestContext', event.requestContext);
 
-    const body = JSON.stringify(unmarshalledLinks);
+  if (!userID) {
+    return createError(401, { message: 'Not authorized' });
+  }
+
+  try {
+    // const unmarshalledLinks = await getItemsFromTable(LINKS_TABLE!);
+
+    const userLinks = await getUserLinks(LINKS_TABLE!, userID);
+    console.log(' ~ userLinks:', userLinks);
+
+    const body = JSON.stringify(userLinks);
 
     return {
       statusCode: 200,
