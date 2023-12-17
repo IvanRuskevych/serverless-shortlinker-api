@@ -21,7 +21,10 @@ export const users = async (
   console.log('users-- verifyToken ~ userID:', userID);
 
   if (!userID) {
-    return callback(null, createPolicyDocument('Not authorized', 'Deny', resource));
+    return callback(null, {
+      policyDocument: generatePolicy('Deny', event.routeArn),
+      principalId: 'Not authorized',
+    });
   }
 
   return callback(null, {
@@ -31,28 +34,6 @@ export const users = async (
       userID: userID,
     },
   });
-};
-
-const createPolicyDocument = (
-  principalId: string,
-  effect: 'Allow' | 'Deny',
-  resource: string
-): APIGatewayAuthorizerResult => {
-  const policyDocument: PolicyDocument = {
-    Version: '2012-10-17',
-    Statement: [
-      {
-        Action: 'execute-api:Invoke',
-        Effect: effect,
-        Resource: resource,
-      },
-    ],
-  };
-
-  return {
-    principalId,
-    policyDocument,
-  };
 };
 
 const generatePolicy = (effect: string, resource: string): PolicyDocument => {
