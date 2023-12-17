@@ -90,6 +90,8 @@ functions:
       - httpApi:
           path: /links/list
           method: get
+          authorizer:
+            name: customAuthorizerUsers
 
   redirectToOriginalLink:
     handler: src/functions/links.redirectToOriginalLink

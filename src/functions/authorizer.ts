@@ -18,15 +18,12 @@ export const users = async (
   }
 
   const { userID } = verifyToken(accessToken);
-  console.log(' ~ userID:', userID);
+  console.log('users-- verifyToken ~ userID:', userID);
 
   if (!userID) {
     return callback(null, createPolicyDocument('Not authorized', 'Deny', resource));
   }
 
-  // console.log('Allow', createPolicyDocument(userID, 'Allow', resource));
-
-  // return callback(null, createPolicyDocument(userID, 'Allow', resource));
   return callback(null, {
     policyDocument: generatePolicy('Allow', event.routeArn),
     principalId: userID,
@@ -58,28 +55,6 @@ const createPolicyDocument = (
   };
 };
 
-// const generatePolicy = async (
-//   principalId: string,
-//   effect: string,
-//   resource: string
-// ): Promise<APIGatewayAuthorizerResult> => {
-//   const policyDocument = {} as PolicyDocument;
-//   if (effect) {
-//     policyDocument.Version = '2012-10-17';
-//     policyDocument.Statement = [];
-//     const statementOne: any = {};
-//     statementOne.Action = 'execute-api:Invoke';
-//     statementOne.Effect = effect;
-//     statementOne.Resource = resource;
-//     policyDocument.Statement[0] = statementOne;
-//   }
-
-//   return {
-//     principalId: principalId,
-//     policyDocument: policyDocument,
-//   };
-// };
-
 const generatePolicy = (effect: string, resource: string): PolicyDocument => {
   const policyDocument = {} as PolicyDocument;
   if (effect && resource) {
@@ -92,6 +67,5 @@ const generatePolicy = (effect: string, resource: string): PolicyDocument => {
     policyDocument.Statement[0] = statementOne;
   }
 
-  console.log(' generatePolicy ~ policyDocument:', policyDocument);
   return policyDocument;
 };
