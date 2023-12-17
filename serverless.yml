@@ -106,6 +106,8 @@ functions:
       - httpApi:
           path: /links/deactivate/{linkID}
           method: patch
+          authorizer:
+            name: customAuthorizerUsers
 
   deactivateLinkCron:
     handler: src/functions/links.deactivateLinkCron
@@ -114,6 +116,8 @@ functions:
       - httpApi:
           path: /links/deactivate
           method: get
+          authorizer:
+            name: customAuthorizerUsers
 
   # ses-services:
   #   handler: src/services/ses.sendEmailsForDeactivatedLinks

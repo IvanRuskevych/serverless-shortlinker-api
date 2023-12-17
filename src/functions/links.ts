@@ -184,6 +184,14 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 };
 
 export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const userID = event.requestContext?.authorizer?.lambda.userID;
+  console.log(' ~ deactivateLink ~ userID:', userID);
+  console.log('event.requestContext', event.requestContext);
+
+  if (!userID) {
+    return createError(401, { message: 'Not authorized' });
+  }
+
   try {
     const linkID = event.pathParameters?.linkID as string;
     console.log(' ~ deactivateLink ~ linkID:', linkID);
@@ -200,10 +208,14 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
     const commandFindLinkById: GetItemCommand = new GetItemCommand(paramsFindLinkById);
 
     const { Item } = await ddbClient.send(commandFindLinkById);
-    // console.log(" ~ deactivateLink ~ Item:", Item)
+    console.log(' ~ deactivateLink ~ Item:', Item);
 
     if (!Item) {
       return createError(404, { message: `Link with ID: ${linkID} does not exists` });
+    }
+
+    if (Item.userID.S! !== userID) {
+      return createError(409, { message: `You do not have permission to deactivate the link` });
     }
 
     if (!Item.isActive.BOOL!) {
@@ -235,11 +247,18 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
 };
 
 export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const userID = event.requestContext?.authorizer?.lambda.userID;
+  console.log('event.requestContext', event.requestContext);
+
+  if (!userID) {
+    return createError(401, { message: 'Not authorized' });
+  }
+
   try {
     const commandDeactivateExpiredLinks: ScanCommand = new ScanCommand({
       TableName: LINKS_TABLE,
-      FilterExpression: 'isActive = :value1 AND expireDate < :currentDate',
-      ExpressionAttributeValues: marshall({ ':value1': true, ':currentDate': Date.now() }),
+      FilterExpression: 'userID = :value1 AND isActive = :value2 AND expireDate < :currentDate',
+      ExpressionAttributeValues: marshall({ ':value1': userID, ':value2': true, ':currentDate': Date.now() }),
     });
 
     const { Items } = await ddbClient.send(commandDeactivateExpiredLinks);
