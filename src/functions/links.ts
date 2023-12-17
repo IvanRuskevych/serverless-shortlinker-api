@@ -1,4 +1,4 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   DynamoDBClient,
   GetItemCommand,
@@ -6,38 +6,46 @@ import {
   ScanCommand,
   UpdateItemCommand,
   UpdateItemCommandInput,
-} from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
+} from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 
-import { v4 } from "uuid";
+import { v4 } from 'uuid';
 
-import { createError } from "../utils/errors";
-import { getItemsFromTable } from "../services";
-import { DeactivatedLink } from "../schemas/interfaces";
-import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
+import { createError } from '../utils/errors';
+import { getItemsFromTable } from '../services';
+import { DeactivatedLink } from '../schemas/interfaces';
+import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
 const sqs = new SQSClient();
 
-const headers = { "content-type": "application/json" };
-const {BASE_URL, USERS_TABLE, LINKS_TABLE, SQS_DEACTIVATION_QUEUE_URL} = process.env;
+const headers = { 'content-type': 'application/json' };
+const { BASE_URL, USERS_TABLE, LINKS_TABLE, SQS_DEACTIVATION_QUEUE_URL } = process.env;
 
 export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     // check for authorized and get userID
-    // const userID = event.requestContext?.authorizer?.principalId;
-    // console.log("createNewLink ~ userID:", userID);
-    // if (!userID) {
-    //   return createError(401, { message: "Not authorized" });
-    // }
+    const userID = event.requestContext?.authorizer?.lambda.userID;
+    if (!userID) {
+      return createError(401, { message: 'Not authorized' });
+    }
 
     const reqBody = JSON.parse(event.body as string);
     const { link, expireDays, isOneTime = false } = reqBody as { link: string; expireDays: number; isOneTime: Boolean };
 
-    if (!link || link==="") {
-      const body = JSON.stringify({ message: "Link is required" });
+    if (!Number.isSafeInteger(expireDays)) {
+      const body = JSON.stringify({ message: 'The "expireDays" should be an integer' });
+      return {
+        statusCode: 400,
+        headers,
+        body,
+      };
+    }
+
+    if (!link || link === '') {
+      const body = JSON.stringify({ message: 'Link is required' });
       return {
         statusCode: 400,
         headers,
@@ -53,7 +61,7 @@ export const createNewLink = async (event: APIGatewayProxyEvent): Promise<APIGat
     const expireDate = Date.now() + expireDays * 24 * 60 * 60 * 1000;
 
     const newLinkData = {
-      // userID:"5a416117-d69d-482f-8d16-43844142889d",
+      userID,
 
       linkID,
       linkMarker,
@@ -104,25 +112,25 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
     const linkMarker = event.pathParameters?.linkMarker as string;
 
     if (!linkMarker) {
-      return createError(400, { message: "Invalid link ==>> linkMarker" });
+      return createError(400, { message: 'Invalid link ==>> linkMarker' });
     }
 
     // Find link by linkMarker
     const commandFindLink: ScanCommand = new ScanCommand({
       TableName: LINKS_TABLE,
-      FilterExpression: "linkMarker = :value",
-      ExpressionAttributeValues: marshall({ ":value": linkMarker }),
+      FilterExpression: 'linkMarker = :value',
+      ExpressionAttributeValues: marshall({ ':value': linkMarker }),
     });
 
     const { Items } = await ddbClient.send(commandFindLink);
     if (!Items || Items.length === 0) {
-      return createError(404, { message: "Link does not exists" });
+      return createError(404, { message: 'Link does not exists' });
     }
 
     const { linkID, link, isActive, isOneTime } = unmarshall(Items[0]);
 
     if (!isActive) {
-      return createError(404, { message: "The link was deactivated" });
+      return createError(404, { message: 'The link was deactivated' });
     }
 
     // find link by id & check isOneTime
@@ -130,9 +138,9 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
       const paramsUpdateIsOneTime: UpdateItemCommandInput = {
         TableName: LINKS_TABLE,
         Key: marshall({ linkID }),
-        UpdateExpression: "SET isOneTime = :value1, isActive = :value2, linkClickCounter = :value3",
-        ExpressionAttributeValues: marshall({ ":value1": false, ":value2": false, ":value3": 1 }),
-        ReturnValues: "ALL_NEW",
+        UpdateExpression: 'SET isOneTime = :value1, isActive = :value2, linkClickCounter = :value3',
+        ExpressionAttributeValues: marshall({ ':value1': false, ':value2': false, ':value3': 1 }),
+        ReturnValues: 'ALL_NEW',
       };
       const commandUpdateIsOneTime = new UpdateItemCommand(paramsUpdateIsOneTime);
 
@@ -142,9 +150,9 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
       const paramsUpdateCounter: UpdateItemCommandInput = {
         TableName: LINKS_TABLE,
         Key: marshall({ linkID }),
-        UpdateExpression: "ADD linkClickCounter :value",
-        ExpressionAttributeValues: marshall({ ":value": 1 }),
-        ReturnValues: "ALL_NEW",
+        UpdateExpression: 'ADD linkClickCounter :value',
+        ExpressionAttributeValues: marshall({ ':value': 1 }),
+        ReturnValues: 'ALL_NEW',
       };
 
       const commandUpdateCounter = new UpdateItemCommand(paramsUpdateCounter);
@@ -154,7 +162,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 
     // return original link
     const body = JSON.stringify(link);
-    
+
     return {
       statusCode: 200,
       headers,
@@ -168,10 +176,10 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
 export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const linkID = event.pathParameters?.linkID as string;
-    console.log(" ~ deactivateLink ~ linkID:", linkID)
+    console.log(' ~ deactivateLink ~ linkID:', linkID);
 
     if (!linkID) {
-      return createError(400, { message: "Invalid link ID" });
+      return createError(400, { message: 'Invalid link ID' });
     }
 
     const paramsFindLinkById = {
@@ -195,9 +203,9 @@ export const deactivateLink = async (event: APIGatewayProxyEvent): Promise<APIGa
     const paramsIsActiveLink: UpdateItemCommandInput = {
       TableName: LINKS_TABLE,
       Key: marshall({ linkID: linkID }),
-      UpdateExpression: "SET isActive = :value",
-      ExpressionAttributeValues: marshall({ ":value": false }),
-      ReturnValues: "ALL_NEW",
+      UpdateExpression: 'SET isActive = :value',
+      ExpressionAttributeValues: marshall({ ':value': false }),
+      ReturnValues: 'ALL_NEW',
     };
 
     const commandIsActiveLink = new UpdateItemCommand(paramsIsActiveLink);
@@ -220,16 +228,15 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
   try {
     const commandDeactivateExpiredLinks: ScanCommand = new ScanCommand({
       TableName: LINKS_TABLE,
-      FilterExpression: "isActive = :value1 AND expireDate < :currentDate",
-      ExpressionAttributeValues: marshall({ ":value1": true, ":currentDate": Date.now() }),
+      FilterExpression: 'isActive = :value1 AND expireDate < :currentDate',
+      ExpressionAttributeValues: marshall({ ':value1': true, ':currentDate': Date.now() }),
     });
-    
+
     const { Items } = await ddbClient.send(commandDeactivateExpiredLinks);
-    // console.log(" ~ Items:", Items)
-    
+
     // Links for deactivation does`t exists
     if (!Items || Items.length === 0) {
-      const body = JSON.stringify({ message: "Deactivation links not found" });
+      const body = JSON.stringify({ message: 'Deactivation links not found' });
 
       return {
         statusCode: 200,
@@ -242,12 +249,10 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
     const userIdsSet = [...new Set(linksForDeactivating.map((item) => item.userID))];
 
-
     // Find by userID emails to send deactivated links
     let emailsList = [];
 
     for (const item of userIdsSet) {
-      // console.log("item", item);
       const paramsFindEmailsByUserID: GetItemCommandInput = {
         TableName: USERS_TABLE,
         Key: marshall({ userID: item }),
@@ -257,19 +262,18 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
       const { Item } = await ddbClient.send(commandFindEmailsByUserID);
 
-      const user = unmarshall(Item!);
-      // console.log(" ~ user:", user);
-
-      emailsList.push({ userID: user.userID, email: user.email });
+      if (Item) {
+        const user = unmarshall(Item);
+        emailsList.push({ userID: user.userID, email: user.email });
+      }
     }
-    // console.log("🚀 emailsList:", emailsList);
 
     let deactivatedLinksWithEmails: DeactivatedLink[] = [];
 
-    for (const item of linksForDeactivating) {
-      const userID = item.userID;
-      const linkID = item.linkID;
-      const link = item.link;
+    for (const linkData of linksForDeactivating) {
+      const userID = linkData.userID;
+      const linkID = linkData.linkID;
+      const link = linkData.link;
 
       emailsList.find((item) => {
         if (item.userID === userID) {
@@ -281,9 +285,9 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
       const paramsIsActiveLink: UpdateItemCommandInput = {
         TableName: LINKS_TABLE,
         Key: marshall({ linkID: linkID }),
-        UpdateExpression: "SET isActive = :value",
-        ExpressionAttributeValues: marshall({ ":value": false }),
-        ReturnValues: "ALL_NEW",
+        UpdateExpression: 'SET isActive = :value',
+        ExpressionAttributeValues: marshall({ ':value': false }),
+        ReturnValues: 'ALL_NEW',
       };
 
       const commandIsActiveLink = new UpdateItemCommand(paramsIsActiveLink);
