@@ -13,8 +13,6 @@ export const generateTokens = (payload: { userID: string }): { accessToken: stri
   };
 };
 
-export const saveToken = async (id: string) => {};
-
 export const verifyToken = (token: string): JwtPayload => {
   try {
     const payload = jwt.verify(token, SECRET_ACCESS_TOKEN!) as JwtPayload;

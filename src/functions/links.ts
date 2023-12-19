@@ -8,14 +8,15 @@ import {
   UpdateItemCommandInput,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
+
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 
 import { v4 } from 'uuid';
 
-import { createError } from '../utils/errors';
-import { getItemsFromTable, getUserLinks } from '../services';
-import { DeactivatedLink } from '../schemas/interfaces';
-import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
+import { createError } from '../utils';
+import { getUserLinks } from '../services';
+import { DeactivatedLink } from '../schemas';
 
 const ddbClient = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
@@ -100,8 +101,6 @@ export const linksList = async (event: APIGatewayProxyEvent): Promise<APIGateway
   }
 
   try {
-    // const unmarshalledLinks = await getItemsFromTable(LINKS_TABLE!);
-
     const userLinks = await getUserLinks(LINKS_TABLE!, userID);
     console.log(' ~ userLinks:', userLinks);
 
@@ -133,6 +132,7 @@ export const redirectToOriginalLink = async (event: APIGatewayProxyEvent): Promi
     });
 
     const { Items } = await ddbClient.send(commandFindLink);
+
     if (!Items || Items.length === 0) {
       return createError(404, { message: 'Link does not exists' });
     }
@@ -339,7 +339,6 @@ export const deactivateLinkCron = async (event: APIGatewayProxyEvent): Promise<A
 
     // Create body for return
     const body = JSON.stringify({
-      deactivatedLinksWithEmails,
       message: `Deactivated ${linksForDeactivating.length} links`,
     });
 

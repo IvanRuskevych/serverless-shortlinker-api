@@ -1,18 +1,19 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-
-import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { unmarshall } from '@aws-sdk/util-dynamodb';
 
 import { v4 } from 'uuid';
 
-import { User } from '../schemas/interfaces';
-import { createError } from '../utils/errors';
-
-import { generateTokens, getItemsFromTable, hashPassword, updateTokensInTable, validatePassword } from '../services';
-
-const ddbClient = new DynamoDBClient({});
-const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+import { User } from '../schemas';
+import { createError } from '../utils';
+import {
+  addUser,
+  findUserByEmail,
+  generateTokens,
+  getItemsFromTable,
+  hashPassword,
+  updateTokensInTable,
+  validatePassword,
+} from '../services';
 
 const { USERS_TABLE } = process.env;
 const headers = { 'content-type': 'application/json' };
@@ -22,15 +23,9 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     const reqBody = JSON.parse(event.body as string);
     const { email, password } = reqBody;
 
-    const scanCommandEmail: ScanCommand = new ScanCommand({
-      TableName: USERS_TABLE,
-      FilterExpression: 'email = :value',
-      ExpressionAttributeValues: marshall({ ':value': email }),
-    });
+    const existingUser = await findUserByEmail(email);
 
-    const result = await ddbClient.send(scanCommandEmail);
-
-    if (result.Items && result.Items.length > 0) {
+    if (Array.isArray(existingUser) && existingUser.length > 0) {
       return createError(409, { message: 'Email in use' });
     }
 
@@ -46,16 +41,7 @@ export const signUp = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
       refreshToken,
     };
 
-    console.log(' ~ newUser:', newUser);
-
-    const command: PutCommand = new PutCommand({
-      TableName: USERS_TABLE,
-      Item: newUser,
-    });
-
-    console.log(' ~ command:', command);
-
-    await ddbDocClient.send(command);
+    await addUser(newUser);
 
     const body = JSON.stringify({ userID, accessToken, refreshToken });
 
@@ -76,42 +62,35 @@ export const signIn = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     if (!email || !password) {
       return {
         statusCode: 400,
-        body: 'Enter email or password',
+        body: 'Enter email and password',
       };
     }
 
-    // find user by id
-    const commandFindUserByEmail: ScanCommand = new ScanCommand({
-      TableName: USERS_TABLE,
-      FilterExpression: 'email = :value',
-      ExpressionAttributeValues: marshall({ ':value': email }),
-    });
+    const output = await findUserByEmail(email);
 
-    const { Items } = await ddbClient.send(commandFindUserByEmail);
+    let existingUser = [];
 
-    if (!Items || Items.length === 0) {
-      return createError(404, { message: 'User not found' });
+    if (Array.isArray(output) && output.length > 0) {
+      existingUser = output.map((el) => unmarshall(el));
+    } else {
+      return createError(404, { message: 'Password or email is wrong' });
     }
 
     // validate psw
-    const passwordDB = unmarshall(Items[0]).password;
+    const { userID, password: passwordDB } = existingUser[0];
 
-    const isValidPassword = validatePassword(password, passwordDB);
+    const isValidPassword = await validatePassword(password, passwordDB);
 
     if (!isValidPassword) {
-      return {
-        statusCode: 401,
-        body: 'Password or email is wrong',
-      };
+      return createError(401, { message: 'Password or email is wrong' });
     }
 
     // create new tokens
-    const userID = Items[0].userID.S!;
     const { accessToken, refreshToken } = generateTokens({ userID });
-    const body = JSON.stringify({ userID, accessToken, refreshToken });
 
     await updateTokensInTable(USERS_TABLE!, userID, accessToken, refreshToken);
 
+    const body = JSON.stringify({ userID, accessToken, refreshToken });
     return {
       statusCode: 200,
       headers,
